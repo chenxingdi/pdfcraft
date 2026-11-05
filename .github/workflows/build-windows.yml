@@ -1,0 +1,93 @@
+name: Build Windows (AI Assistant fork)
+
+# Builds the fork's Windows app in the cloud: no Rust, Visual Studio or Windows SDK is needed on
+# the machine that pushes. The result is an unsigned portable `pdfcraft.exe` with the C runtime
+# linked statically (as packaging/windows/package.ps1 does), so it runs without the VC++
+# redistributable.
+#
+# `workflow_dispatch` rebuilds on demand; a push to `ai-assistant` (this fork's branch) rebuilds
+# after a change. Pushes to `main` are left to the upstream CI.
+
+on:
+  push:
+    branches: [ai-assistant]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # Static CRT, scoped to the target so host build scripts and proc-macros are unaffected
+  # (packaging/windows/package.ps1 uses the same variable).
+  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
+  # Fail rather than warn if the icon and VERSIONINFO cannot be embedded (the SDK's rc.exe is
+  # preinstalled on the runner).
+  PDFCRAFT_REQUIRE_WINRES: "1"
+
+jobs:
+  build:
+    name: cargo build --release -p pdfcraft
+    runs-on: windows-latest
+    timeout-minutes: 180
+    steps:
+      - name: Check out the fork
+        uses: actions/checkout@v4
+
+      - name: Install Rust (MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache the Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          # A release build of the whole workspace; keys keep the cache from one toolchain apart
+          # from another's.
+          shared-key: pdfcraft-windows-release
+
+      - name: Build the app
+        run: cargo build --release -p pdfcraft
+
+      - name: Check the executable
+        shell: pwsh
+        run: |
+          $exe = "target/release/pdfcraft.exe"
+          if (-not (Test-Path $exe)) { throw "the build produced no $exe" }
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $exe))
+          $pe = [BitConverter]::ToInt32($bytes, 0x3C)
+          $machine = [BitConverter]::ToUInt16($bytes, $pe + 4)
+          $subsystem = [BitConverter]::ToUInt16($bytes, $pe + 0x5C)
+          if ($machine -ne 0x8664) { throw ("pdfcraft.exe is for machine 0x{0:X}, expected x64" -f $machine) }
+          if ($subsystem -ne 2) { throw "pdfcraft.exe is not a Windows GUI program (subsystem $subsystem)" }
+          Write-Output ("ok: {0:N0} bytes, x64, GUI" -f (Get-Item $exe).Length)
+
+      - name: Package (portable)
+        shell: pwsh
+        run: |
+          $stage = "target/portable/pdfcraft"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target/release/pdfcraft.exe" $stage
+          foreach ($f in @("LICENSE-MIT", "LICENSE-APACHE", "NOTICE")) {
+            if (Test-Path $f) { Copy-Item $f $stage }
+          }
+          # The lock file the build produced, so the tree can be brought in step with it.
+          Copy-Item "Cargo.lock" $stage
+          Compress-Archive -Path "$stage/*" -DestinationPath "target/portable/pdfcraft-windows-x64-portable.zip" -Force
+          Get-ChildItem "target/portable" | Format-Table Name, Length
+
+      - name: Upload the portable zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdfcraft-windows-x64-portable
+          path: |
+            target/portable/pdfcraft-windows-x64-portable.zip
+            target/release/pdfcraft.exe
+            Cargo.lock
+          if-no-files-found: error
+          retention-days: 30

@@ -200,6 +200,9 @@ pub const COMMANDS: &[CommandSpec] = &[
     c("edit.find", "Find…", EDIT, Some(Shortcut::cmd("F")), Document, "search"),
     c("edit.advanced_search", "Advanced search…", EDIT, Some(Shortcut::cmd_shift("F")), Document, "search"),
     c("view.palette", "Find tools and commands…", VIEW, Some(Shortcut::cmd("K")), Nothing, "search"),
+    // The AI Assistant (on by default in this build; Preferences ▸ AI Assistant turns it off).
+    // Running this while it is off shows the preferences that turn it back on.
+    c("ai.assistant", "AI Assistant…", VIEW, Some(Shortcut::cmd_shift("A")), Nothing, "sparkles"),
     // Page display: View ▸ Page display and the rail's button list the base layouts as radios and
     // continuous scrolling as a checkbox, so `menu = None` keeps them out of the generated menus.
     // The palette still runs them.

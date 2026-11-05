@@ -361,6 +361,7 @@ impl PdfCraftApp {
         view.push(Node::Separator);
         view.push(Node::submenu(tl!("Tools"), self.tools_menu(&used)));
         view.extend(list(&["view.palette"], &mut used));
+        view.extend(list(&["ai.assistant"], &mut used));
         let mut bar = MenuBar {
             menus: vec![
                 Menu::new(tl!("File"), craft_menu::tidy(file)).role(MenuRole::File),

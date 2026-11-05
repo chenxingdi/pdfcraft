@@ -52,6 +52,8 @@ pub use link_ui::LinkDraft;
 pub use optimize_ui::{OptimizeDraft, OptimizeTab};
 pub use sign_ui::{DigitalIdEntry, SignDraft, SignGraphic, SignStep};
 mod bidi;
+/// The AI Assistant (on by default in this build).
+mod ai;
 mod dialogs;
 pub use edit_text_ui::{CropMode, DragTarget, ImageDrag, ImageHandle, ImageSelection};
 mod editing;
@@ -336,6 +338,9 @@ pub struct PdfCraftApp {
     /// Colour for new Fill & Sign text and dates, kept across launches.
     pub fill_text_color: [f64; 3],
     pub dialog: Option<Dialog>,
+    /// The AI Assistant: its settings (on by default in this build), the conversation and the
+    /// request in flight (see `ai`).
+    pub ai: ai::AiAssistant,
     /// How to ask for the latest release (the desktop app sets it; see `updates`).
     pub(crate) updates: updates::Updates,
     /// Lists the Print dialog's printers in the background (the desktop app sets it; see

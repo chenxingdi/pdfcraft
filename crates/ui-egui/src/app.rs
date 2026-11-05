@@ -111,6 +111,7 @@ impl PdfCraftApp {
             fill_tool: fill_sign::FillTool::Signature,
             fill_text_color: [0.0; 3],
             dialog: None,
+            ai: crate::ai::AiAssistant::default(),
             updates: updates::Updates::default(),
             printer_source: None,
             options_source: None,
@@ -694,6 +695,8 @@ impl eframe::App for PdfCraftApp {
         self.process_pending_edits();
         palette::show(self, &ctx);
         dialogs::show(self, &ctx);
+        // The AI Assistant's panel sits above the document, beside the modal dialogs.
+        crate::ai::show(self, &ctx);
         self.show_progress(&ctx);
         widgets::toast(self, &ctx);
         self.finish_render_frame(&ctx);

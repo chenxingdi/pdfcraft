@@ -544,6 +544,13 @@ pub(crate) fn preferences_body(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tok
     });
     ui.add_space(12.0);
 
+    // Card 7: AI Assistant (on by default in this build)
+    let title7 = tl!("AI Assistant");
+    preference_card(ui, t, title7, Some("sparkles"), &mut ctx, |ui, ctx| {
+        card_ai(ui, app, t, ctx);
+    });
+    ui.add_space(12.0);
+
     if ctx.first_match_scrolled {
         ui.data_mut(|d| d.insert_temp(last_scrolled_id, query.clone()));
     } else if query.trim().is_empty() {
@@ -810,6 +817,49 @@ fn card_javascript(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens, ctx: &m
         tl!(
             "Scripts run in a sandbox without file or network access. A script that asks to open a web page needs your permission first. With JavaScript off, Acrobat's standard format, validate and calculate functions still work."
         ),
+        t,
+    );
+}
+
+/// Content for Card 7: the AI Assistant, on by default and turned off here.
+fn card_ai(ui: &mut egui::Ui, app: &mut PdfCraftApp, t: &Tokens, ctx: &mut PrefSearchContext) {
+    ctx.checkbox(ui, &mut app.ai.settings.enabled, tl!("Enable the AI Assistant"), t);
+    ctx.label_secondary(
+        ui,
+        tl!(
+            "On by default. View ▸ AI Assistant (Ctrl+Shift+A) opens a chat panel; only a question you send — together with the page or document text you choose in the panel — leaves this computer."
+        ),
+        t,
+    );
+    if !app.ai.settings.enabled {
+        return;
+    }
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        let label = ctx.label_primary(ui, tl!("Service address"), t);
+        ui.add(crate::widgets::line(&mut app.ai.settings.base_url).desired_width(300.0).char_limit(300)).labelled_by(label.id);
+    });
+    ctx.label_secondary(
+        ui,
+        tl!(
+            "An OpenAI-compatible address: https://api.openai.com/v1, https://api.deepseek.com/v1 or a local http://localhost:11434/v1. /chat/completions is added to it."
+        ),
+        t,
+    );
+    ui.horizontal(|ui| {
+        let label = ctx.label_primary(ui, tl!("Model"), t);
+        ui.add(crate::widgets::line(&mut app.ai.settings.model).desired_width(220.0).char_limit(120)).labelled_by(label.id);
+    });
+    ui.horizontal(|ui| {
+        let label = ctx.label_primary(ui, tl!("API key"), t);
+        ui.add(crate::widgets::line(&mut app.ai.settings.api_key).password(true).desired_width(300.0).char_limit(400)).labelled_by(label.id);
+    });
+    ctx.label_secondary(ui, tl!("Kept in PdfCraft's settings file on this computer. Leave it empty for a local service."), t);
+    ui.add_space(6.0);
+    ctx.checkbox(ui, &mut app.ai.settings.include_document_text, tl!("Let questions carry document text"), t);
+    ctx.label_secondary(
+        ui,
+        tl!("Off, the panel sends only your questions. On, it sends the page or document text you pick in the panel, and nothing else from your files."),
         t,
     );
 }

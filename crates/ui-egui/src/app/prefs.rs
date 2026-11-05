@@ -152,6 +152,8 @@ impl PdfCraftApp {
         v["update_check_at_start"] = self.update_check_at_start.into();
         v["hotbar"] = serde_json::to_value(&self.hotbar).unwrap_or_default();
         v["comment_tool_pinned"] = serde_json::Value::Bool(self.comment_prefs.pinned);
+        // The AI Assistant: on for a fresh install; turned off in Preferences, it stays off.
+        v["ai"] = self.ai.settings.to_json();
         v["show_secured_notice"] = serde_json::Value::Bool(self.show_secured_notice);
         v["organize_zoom"] = serde_json::json!(self.organize_zoom);
         // Canonical names survive changes to the order of PAPERS and do not depend on UI language.
@@ -204,6 +206,8 @@ impl PdfCraftApp {
         self.restore_view_prefs(&v);
         self.restore_comment_prefs(&v);
         self.restore_signature_prefs(&v);
+        // Missing from older settings: the defaults, which have the assistant on.
+        self.ai.settings = crate::ai::Settings::from_json(&v["ai"]);
     }
 
     /// The panels, combine view, zoom and recent files.

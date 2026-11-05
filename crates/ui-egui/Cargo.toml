@@ -52,6 +52,9 @@ skrifa = "0.44"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 craft-update = { workspace = true }
+# The AI Assistant's one HTTP call to an OpenAI-compatible service (see `ai.rs`). Already in the
+# tree through craft-update, so the version and its TLS stack are the ones PdfCraft already builds.
+ureq = "3.5"
 # Control-channel tokens.
 getrandom = "0.4"
 # Create ▸ Clipboard (images; already in the tree through egui-winit).
