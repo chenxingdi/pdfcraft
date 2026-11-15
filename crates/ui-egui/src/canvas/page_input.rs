@@ -933,9 +933,9 @@ pub(super) fn page_overlays(ui: &mut egui::Ui, view: &mut DocView, frame: &mut P
     let painter = ui.painter();
     let tool_cx = PageToolContext { ui, resp, xf: &xf, ptr, page: i, doc, info, keys };
     let pcx = comments::PageCx { page: i, xf: &xf, ptr, info, tool, prefs, allowed, hidden: comments_hidden, redact_mark, keys };
-    // A press nobody holds picks the picture under it: a link's click follows the link only (ruling
-    // 5), though its drag or double-click still lets the picked picture go, as does a drag the page
-    // it is over first sees, whichever page it began on.
+    // A press nobody holds picks the picture under it, on a double click: a link's click follows
+    // the link only (ruling 5), though its drag or double-click still lets the picked picture go,
+    // as does a drag the page it is over first sees, whichever page it began on.
     let pick_sees =
         matches!(input.press, PagePress::Free | PagePress::Mine(Owner::Link { .. })) || input.press == PagePress::Elsewhere && ptr.drag_started;
     if tool != QuickTool::Select {
@@ -943,7 +943,8 @@ pub(super) fn page_overlays(ui: &mut egui::Ui, view: &mut DocView, frame: &mut P
     } else if pick_sees && !input.consumed {
         crate::image_pick::page_input(resp, &xf, i, info, doc, ptr, input.press == PagePress::Free, view);
     } else if resp.clicked() || ptr.drag_started {
-        // Another owner took the press: an earlier click's picture, still being found, isn't picked.
+        // Another owner took the press: an earlier double click's picture, still being found,
+        // isn't picked.
         view.pending_pick = None;
     }
     crate::image_pick::drop_stale(doc, view);

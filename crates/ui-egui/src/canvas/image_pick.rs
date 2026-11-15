@@ -21,10 +21,12 @@ pub struct PickedImage {
 
 const BLUE: Color32 = Color32::from_rgb(0x3A, 0x7B, 0xF0);
 
-/// A click on page `page` (Select tool, not taken by anything else) selects the picture under
-/// it, even with text drawn over it (scans with an OCR layer, captions), with `pick` (a press
-/// nobody holds: a link's click follows the link only); dragging or a double click still selects
-/// text, and clears the picture.
+/// A double click on page `page` (Select tool, not taken by anything else) selects the picture
+/// under it, with `pick` (a press nobody holds: a link's click follows the link only). A single
+/// click selects no picture: on a scanned page the picture is the page, so every click would frame
+/// the whole page and take the click away from the text drawn over it. A double click on text
+/// selects the word instead (see the end of [`page_input`]). Dragging or a triple click still
+/// selects text, and clears the picture.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn page_input(
     resp: &egui::Response,
@@ -39,38 +41,53 @@ pub(crate) fn page_input(
     let Some(info_page) = info.pages.get(page) else { return };
     let generation = doc.edit_generation();
     if let Some(p) = ptr.pos.filter(|p| xf.rect.contains(*p)) {
-        if ptr.drag_started || resp.double_clicked() || resp.triple_clicked() {
+        if ptr.drag_started || resp.triple_clicked() {
             view.picked_image = None;
             view.pending_pick = None;
             return;
         }
+        // Only a double click picks: the click before it clears what an earlier double click left,
+        // and a click whose picture is still being looked for.
         if resp.clicked() {
-            // A link's click picks nothing, and takes back an earlier click still being looked into.
+            view.picked_image = None;
             view.pending_pick = None;
+        }
+        if resp.double_clicked() {
+            // A link's click picks nothing.
             if pick {
                 let (vx, vy) = xf.screen_to_view(p);
                 let u = info_page.view_to_user(vx, vy);
-                view.picked_image = None;
                 view.pending_pick = Some((page, [f64::from(u[0]), f64::from(u[1])], generation));
             }
         }
     }
     // The click's picture, as soon as the page's pictures are known: the window stays live until then.
     let Some((_, at, clicked_in)) = view.pending_pick.filter(|pending| pending.0 == page) else { return };
+    // Text over a picture takes the double click: a double click on a caption selects the word, as
+    // it does anywhere else, and a scan's OCR layer selects the word under the pointer rather than
+    // the whole scan. Read before the pictures, whose lookup holds the view.
+    let on_text = view.page_text(page).is_some_and(|text| {
+        let [vx, vy] = info_page.user_to_view(at[0] as f32, at[1] as f32);
+        text.glyph_at(vx, vy).is_some()
+    });
     if clicked_in != generation {
         view.pending_pick = None;
     } else if let Some(pictures) = view.pictures.get(&resp.ctx, doc, page) {
         // Where the click was on the page now: the view may have moved while the page was read.
         let point = xf.user_rect_f64(info, page, [at[0], at[1], at[0], at[1]]).center();
-        view.picked_image = pdfcraft_engine::picture_at(pictures, at).and_then(|(index, i)| {
-            let screen_rect = crate::canvas::image_screen_rect(i, xf, info, page);
-            (screen_rect.is_positive() && screen_rect.contains(point)).then(|| PickedImage {
-                page,
-                index: *index,
-                rect: crate::canvas::image_selectable_bounds(i),
-                generation,
+        view.picked_image = if on_text {
+            None
+        } else {
+            pdfcraft_engine::picture_at(pictures, at).and_then(|(index, i)| {
+                let screen_rect = crate::canvas::image_screen_rect(i, xf, info, page);
+                (screen_rect.is_positive() && screen_rect.contains(point)).then(|| PickedImage {
+                    page,
+                    index: *index,
+                    rect: crate::canvas::image_selectable_bounds(i),
+                    generation,
+                })
             })
-        });
+        };
         view.pending_pick = None;
     }
 }

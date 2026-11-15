@@ -382,13 +382,14 @@ fn a_drag_from_text_onto_a_link_selects_the_text() {
     assert!(selected.contains("example.org"), "the drag selected across the link: {selected:?}");
 }
 
-/// With the Select tool a click on a link over a picture follows the link and picks no picture; one
-/// on the picture beside the link picks it. The link's click used to pick the picture under it too.
+/// With the Select tool a click on a link over a picture follows the link and picks no picture; a
+/// double click on the picture beside the link picks it. The link's click used to pick the picture
+/// under it too.
 #[test]
 fn a_click_on_a_link_over_a_picture_follows_it_and_picks_no_picture() {
     let mut h = open(linked_picture_pdf(), "150", false);
     let beside = at(&h, 70.0, 300.0);
-    mouse_click(&mut h, beside);
+    double_click(&mut h, beside);
     assert!(h.state().views[0].picked_image.is_some(), "the picture beside the link is picked");
     h.state_mut().views[0].picked_image = None;
     let on_link = at(&h, 150.0, 300.0);
@@ -2079,7 +2080,7 @@ fn a_click_beside_the_picture_unselects_it_where_objects_cant_be_grouped() {
 fn a_drag_from_a_link_lets_the_picked_picture_go() {
     let mut h = open(linked_picture_pdf(), "150", false);
     let beside = at(&h, 70.0, 300.0);
-    mouse_click(&mut h, beside);
+    double_click(&mut h, beside);
     assert!(h.state().views[0].picked_image.is_some(), "the picture is picked");
     let on_link = at(&h, 150.0, 300.0);
     mouse_drag(&mut h, on_link, egui::vec2(30.0, 0.0));

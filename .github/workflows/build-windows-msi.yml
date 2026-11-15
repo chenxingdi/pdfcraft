@@ -1,0 +1,211 @@
+name: Build Windows MSI (fork)
+
+# Builds this fork's Windows installers in the cloud: no Rust, Visual Studio, Windows SDK or WiX
+# is needed on the machine that pushes. x86 (32-bit) and x64 MSIs are built the way
+# packaging/windows/package.ps1 builds a release, then collected into a DRAFT GitHub release.
+#
+# The draft is never published: this workflow only creates or replaces `v<version>` as a draft, so
+# the installers can be downloaded from the release page and nothing is announced. Publishing stays
+# a deliberate act on the release branch (release.yml).
+#
+# Unsigned: this fork has no Windows code-signing secrets, so package.ps1 warns and leaves the
+# binaries and the MSI unsigned, which is what a test build wants. Windows SmartScreen will warn
+# on first run; that is expected for an unsigned build.
+
+on:
+  push:
+    # Any branch but main: main is where upstream's own CI runs, and this fork's work happens on
+    # its own branches. `workflow_dispatch` needs this file on the default branch, which a branch
+    # push doesn't, so the push trigger is what starts a build from a work branch.
+    branches-ignore: [main]
+    paths:
+      - "crates/**"
+      - "apps/**"
+      - "packaging/windows/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "craft-i18n.rev"
+      - ".github/workflows/build-windows-msi.yml"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version for this build, e.g. 0.21.2-ai.1 (empty: [workspace.package] in Cargo.toml)"
+        type: string
+        default: ""
+      draft:
+        description: "Create or replace the draft release with the installers"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-windows-msi-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+  # Same craft-fonts commit as release.yml, ci.yml and freebsd.yml: without it the Japanese UI has
+  # no face and writing Japanese into a PDF fails.
+  CRAFT_FONTS_REF: b076417b5880bd4154bd22f00695b1d28c6bea83
+  # Fail rather than warn when the icon or VERSIONINFO can't be embedded.
+  PDFCRAFT_REQUIRE_WINRES: "1"
+
+jobs:
+  version:
+    name: Resolve the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      msi: ${{ steps.v.outputs.msi }}
+      date: ${{ steps.v.outputs.date }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: v
+        name: Read the version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ inputs.version }}"
+          if [ -z "$version" ]; then
+            # The version lives in one place: [workspace.package] version in the root Cargo.toml.
+            version="$(awk '/^\[/ { in_pkg = ($0 == "[workspace.package]"); next } in_pkg && $1 == "version" { gsub(/[" ]/, "", $3); print $3; exit }' Cargo.toml)"
+          fi
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::not a version: '$version'"
+            exit 1
+          fi
+          # The MSI's ProductVersion is numeric (major.minor.build); a pre-release tag is dropped
+          # there, exactly as package.ps1 does it.
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "msi=${version%%-*}" >>"$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >>"$GITHUB_OUTPUT"
+          echo "Building PdfCraft $version" >>"$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: Windows ${{ matrix.arch }} MSI
+    needs: [version]
+    runs-on: windows-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, target: x86_64-pc-windows-msvc }
+          - { arch: x86, target: i686-pc-windows-msvc }
+    env:
+      PDFCRAFT_VERSION: ${{ needs.version.outputs.version }}
+      PDFCRAFT_BUILD_DATE: ${{ needs.version.outputs.date }}
+      CRAFT_FONTS_DIR: ${{ github.workspace }}\craft-fonts
+      CRAFT_FONTS_REQUIRED: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out craft-fonts (the embedded Japanese and other faces)
+        uses: storytold/craft-common-actions/actions/checkout-craft-fonts@main
+        with:
+          ref: ${{ env.CRAFT_FONTS_REF }}
+
+      - name: Check out craft-i18n (the interface translations)
+        uses: storytold/craft-common-actions/actions/checkout-craft-i18n@main
+
+      - name: Install Rust (MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache the Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: fork-windows-msi-${{ matrix.arch }}
+
+      - name: Apply the version override
+        if: inputs.version != ''
+        shell: bash
+        # The binaries report [workspace.package] version, so a version given for this build is
+        # written there too (as release.yml does); otherwise the MSI and About would disagree.
+        run: cargo xtask version set "$PDFCRAFT_VERSION"
+
+      - name: Install WiX
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g "WixToolset.UI.wixext/5.0.2" "WixToolset.Util.wixext/5.0.2"
+
+      - name: Build, package and check the MSI
+        shell: pwsh
+        run: ./packaging/windows/package.ps1 -Arch ${{ matrix.arch }}
+
+      - name: List the installer
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem "dist/release/*.msi"
+          if (-not $msi) { throw "no MSI in dist/release" }
+          $msi | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-${{ matrix.arch }}
+          # Only the installer: this workflow ships no portable zip.
+          path: dist/release/*.msi
+          if-no-files-found: error
+          retention-days: 30
+
+  draft:
+    name: Draft release with the MSIs
+    needs: [version, windows]
+    # A missing arch is a failure, not a release with one installer.
+    if: ${{ always() && needs.windows.result == 'success' && (github.event_name != 'workflow_dispatch' || inputs.draft) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-windows-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create or replace the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v$VERSION"
+          if draft="$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$draft" != "true" ]; then
+              echo "::error::$tag is already published; this workflow only writes drafts. Bump the version."
+              exit 1
+            fi
+            echo "Replacing the assets of draft $tag"
+            gh release view "$tag" --json assets --jq '.assets[].name' | while read -r asset; do
+              gh release delete-asset "$tag" "$asset" --yes
+            done
+            gh release upload "$tag" --clobber artifacts/*
+          else
+            echo "Creating draft $tag"
+            gh release create "$tag" --draft --title "PdfCraft $VERSION (Windows installers)" --target "$GITHUB_SHA" --generate-notes artifacts/*
+          fi
+          {
+            echo "Draft release **PdfCraft $VERSION** at \`${GITHUB_SHA::9}\`: not published."
+            echo
+            echo "| Installer | Size |"
+            echo "| --- | --- |"
+            for f in artifacts/*; do echo "| \`$(basename "$f")\` | $(( $(stat -c%s "$f") / 1024 )) KiB |"; done
+            echo
+            echo "Unsigned: Windows SmartScreen warns on first run."
+          } >>"$GITHUB_STEP_SUMMARY"

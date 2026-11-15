@@ -1610,8 +1610,8 @@ milestone = "M3"
 status = "partial"
 commands = []
 tools = []
-evidence = ["crates/ui-egui/tests/it/viewer.rs::a_clicked_picture_is_selected_and_copied_in_its_original_format", "crates/ui-egui/tests/it/viewer.rs::right_click_on_a_picture_copies_it_at_full_size", "crates/ui-egui/tests/it/viewer.rs::a_picture_inside_form_artwork_under_text_is_selected_and_copied", "crates/engine/src/tests.rs::copy_image_finds_a_picture_inside_form_artwork_under_text", "crates/engine/src/tests.rs::copy_image_copies_a_jbig2_picture_behind_another_filter", "crates/engine/src/tests.rs::copy_image_reads_the_globals_of_a_jbig2_picture"]
-notes = "Select tool: a click selects a raster image (also inside Form artwork or under text) and ⌘C copies it as a file in its original format (JPEG as stored, else PNG); right-click ▸ Copy Image copies its pixels at full resolution. Missing: inline images (BI/ID/EI), JPEG 2000 images, multi-format clipboard (file and bitmap at once), the web build"
+evidence = ["crates/ui-egui/tests/it/viewer.rs::a_double_clicked_picture_is_selected_and_copied_in_its_original_format", "crates/ui-egui/tests/it/viewer.rs::a_double_click_still_picks_a_scanned_page", "crates/ui-egui/tests/it/viewer.rs::right_click_on_a_picture_copies_it_at_full_size", "crates/ui-egui/tests/it/viewer.rs::a_picture_inside_form_artwork_under_text_is_selected_and_copied", "crates/engine/src/tests.rs::copy_image_finds_a_picture_inside_form_artwork_under_text", "crates/engine/src/tests.rs::copy_image_copies_a_jbig2_picture_behind_another_filter", "crates/engine/src/tests.rs::copy_image_reads_the_globals_of_a_jbig2_picture"]
+notes = "Select tool: a double click selects a raster image (also inside Form artwork, and a whole scanned page) and ⌘C copies it as a file in its original format (JPEG as stored, else PNG); right-click ▸ Copy Image copies its pixels at full resolution. A single click selects no picture, so a click on a scanned page or on text over a picture stays with the text (#3905). Missing: inline images (BI/ID/EI), JPEG 2000 images, multi-format clipboard (file and bitmap at once), the web build"
 
 [[feature]]
 id = "view.rulers"

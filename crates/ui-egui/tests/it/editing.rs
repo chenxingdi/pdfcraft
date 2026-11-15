@@ -8051,7 +8051,7 @@ fn a_drag_first_seen_on_the_next_page_lets_the_picked_picture_go() {
     h.state_mut().quick_tool = pdfcraft_ui_egui::QuickTool::Select;
     h.run_steps(3);
     let on_picture = page_at(&h, 0, 100.0, 180.0);
-    slipping_click(&mut h, on_picture, on_picture);
+    support::input::double_click(&mut h, on_picture);
     assert!(h.state().views[0].picked_image.is_some(), "the picture is picked");
     let press = page_at(&h, 0, 180.0, 20.0);
     let release = page_at(&h, 1, 180.0, 280.0);
@@ -9594,10 +9594,10 @@ fn test_cropped_image_selection_and_bounding_box() {
     let page_rect = h.state().views[0].page_screen_rect(0).expect("on screen");
     // Center point is inside the cropped area:
     let center = page_rect.center();
-    click_at(&mut h, center);
+    support::input::double_click(&mut h, center);
     h.run_steps(2);
 
-    let picked = h.state().views[0].picked_image.expect("image is picked when clicking inside crop");
+    let picked = h.state().views[0].picked_image.expect("image is picked when double-clicking inside crop");
     assert_eq!(picked.page, 0);
     assert_eq!(picked.index, 0);
     // The selection bounding box wraps the visible cropped area, NOT the full CTM rect!
@@ -9610,9 +9610,9 @@ fn test_cropped_image_selection_and_bounding_box() {
 
     // Corner point (e.g. top-left corner of the page) is outside the crop box but inside full CTM rect
     let corner = page_rect.min + egui::vec2(10.0, 10.0);
-    click_at(&mut h, corner);
+    support::input::double_click(&mut h, corner);
     h.run_steps(2);
-    assert!(h.state().views[0].picked_image.is_none(), "clicking cropped-away region must not hit-test or select the image");
+    assert!(h.state().views[0].picked_image.is_none(), "double-clicking cropped-away region must not hit-test or select the image");
 }
 
 /// Print production ▸ Add printer marks: the dialog adds removable marks around

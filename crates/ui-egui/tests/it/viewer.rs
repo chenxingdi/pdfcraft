@@ -2242,15 +2242,15 @@ fn picture_harness_sized(size: egui::Vec2) -> (image::RgbaImage, Harness<'static
 }
 
 #[test]
-fn a_clicked_picture_is_selected_and_copied_in_its_original_format() {
+fn a_double_clicked_picture_is_selected_and_copied_in_its_original_format() {
     let (px, mut h) = picture_harness();
     let i = h.state().active.unwrap();
     let at = h.state().views[i].page_screen_rect(0).expect("on screen").center();
-    h.hover_at(at);
-    h.run_steps(1);
-    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
-    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
-    h.run_steps(2);
+    // A single click selects no picture: on a scan the picture is the page, and a click there is
+    // meant for the text over it.
+    crate::support::input::coalesced_click(&mut h, at);
+    assert_eq!(h.state().views[i].picked_image, None, "a single click picks no picture");
+    crate::support::input::double_click(&mut h, at);
     assert_eq!(h.state().views[i].picked_image.map(|p| (p.page, p.index)), Some((0, 0)));
     h.event(egui::Event::Copy);
     h.run_steps(2);
@@ -2272,11 +2272,7 @@ fn a_picked_picture_that_is_deleted_in_edit_mode_loses_its_highlight() {
     let i = h.state().active.unwrap();
     let id = h.state().views[i].id;
     let at = h.state().views[i].page_screen_rect(0).expect("on screen").center();
-    h.hover_at(at);
-    h.run_steps(1);
-    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
-    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
-    h.run_steps(2);
+    crate::support::input::double_click(&mut h, at);
     assert!(h.state().views[i].picked_image.is_some(), "picked with the Select tool");
     // Edit text & images: click the picture, delete it with the Delete key.
     assert!(h.state_mut().execute("edit.edit_text"));
@@ -2301,11 +2297,7 @@ fn an_edit_clears_the_picked_picture_at_once() {
     let (_, mut h) = picture_harness();
     let i = h.state().active.unwrap();
     let at = h.state().views[i].page_screen_rect(0).expect("on screen").center();
-    h.hover_at(at);
-    h.run_steps(1);
-    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
-    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
-    h.run_steps(2);
+    crate::support::input::double_click(&mut h, at);
     assert!(h.state().views[i].picked_image.is_some(), "picked with the Select tool");
     let delete = pdfcraft_engine::Edit::EditPageImage { page: 0, index: 0, change: pdfcraft_engine::ImageEdit::Delete };
     assert!(h.state_mut().apply_edit(delete));
@@ -2373,13 +2365,10 @@ fn a_picture_inside_form_artwork_under_text_is_selected_and_copied() {
     h.state_mut().system_clipboard = false;
     let i = h.state().active.unwrap();
     let r = h.state().views[i].page_screen_rect(0).expect("on screen");
-    // On the caption ("WWWWWWW" at y 130–170 of 300, from x 15).
-    let at = egui::pos2(r.left() + 60.0 / 200.0 * r.width(), r.top() + (300.0 - 145.0) / 300.0 * r.height());
-    h.hover_at(at);
-    h.run_steps(1);
-    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
-    h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
-    h.run_steps(2);
+    let at_user = |x: f32, y: f32| egui::pos2(r.left() + x / 200.0 * r.width(), r.top() + (300.0 - y) / 300.0 * r.height());
+    // On the picture, clear of the caption ("WWWWWWW" at y 130–170 of 300, from x 15): a double
+    // click picks the Form holding it.
+    crate::support::input::double_click(&mut h, at_user(100.0, 60.0));
     assert_eq!(h.state().views[i].picked_image.map(|p| (p.page, p.index)), Some((0, 0)));
     h.event(egui::Event::Copy);
     h.run_steps(2);
@@ -2387,6 +2376,58 @@ fn a_picture_inside_form_artwork_under_text_is_selected_and_copied() {
     assert_eq!(name, "scan p1 img1.png");
     let png = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).unwrap().into_rgba8();
     assert_eq!(png.into_raw(), vec![255, 0, 0, 255, 0, 0, 255, 255]);
+}
+
+/// A scanned page is one picture covering the page, with its OCR text over it. A single click
+/// selects no picture (the text there is what a click is for); a double click still picks the scan,
+/// as it does any other picture.
+#[test]
+fn a_double_click_still_picks_a_scanned_page() {
+    let stream = |dict: &str, data: &[u8]| {
+        let mut o = format!("<< {dict} /Length {} >>\nstream\n", data.len()).into_bytes();
+        o.extend_from_slice(data);
+        o.extend_from_slice(b"\nendstream");
+        o
+    };
+    let objs: Vec<Vec<u8>> = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        b"<< /Type /Pages /Kids [4 0 R] /Count 1 /MediaBox [0 0 200 300] >>".to_vec(),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec(),
+        b"<< /Type /Page /Parent 2 0 R /Contents 5 0 R /Resources << /Font << /F1 3 0 R >> /XObject << /Im1 6 0 R >> >> >>".to_vec(),
+        // The scan fills the page; the OCR text layer sits over it at the top.
+        stream("", b"q 200 0 0 300 0 0 cm /Im1 Do Q BT /F1 20 Tf 20 260 Td (Scanned words) Tj ET"),
+        stream("/Type /XObject /Subtype /Image /Width 2 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8", &[255, 0, 0, 0, 0, 255]),
+    ];
+    let mut pdf = b"%PDF-1.7\n".to_vec();
+    let mut offsets = Vec::new();
+    for (i, o) in objs.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+        pdf.extend_from_slice(o);
+        pdf.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = pdf.len();
+    pdf.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes());
+    for o in offsets {
+        pdf.extend_from_slice(format!("{o:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objs.len() + 1).as_bytes());
+    let mut h = Harness::builder().with_size(egui::vec2(1400.0, 900.0)).build_eframe(move |_cc| {
+        let mut app = PdfCraftApp::new();
+        app.set_option("language", "en").unwrap();
+        app.open_bytes("scanned.pdf", None, pdf).unwrap();
+        app
+    });
+    crate::support::settle(&mut h);
+    h.state_mut().system_clipboard = false;
+    let i = h.state().active.unwrap();
+    let r = h.state().views[i].page_screen_rect(0).expect("on screen");
+    // Clear of the OCR text, which sits at the top of the page.
+    let at = egui::pos2(r.center().x, r.top() + 0.6 * r.height());
+    crate::support::input::coalesced_click(&mut h, at);
+    assert_eq!(h.state().views[i].picked_image, None, "a single click on a scan picks nothing");
+    crate::support::input::double_click(&mut h, at);
+    assert_eq!(h.state().views[i].picked_image.map(|p| (p.page, p.index)), Some((0, 0)), "a double click picks the scan");
 }
 
 /// A picture in Edit text & images, right-clicked so its menu is open (in a tall window, so the
